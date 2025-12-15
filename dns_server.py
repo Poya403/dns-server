@@ -19,6 +19,16 @@ CREATE TABLE IF NOT EXISTS records (
     ip TEXT
 )
 """)
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS logs (
+    id INTEGER PRIMARY KEY,
+    domain TEXT,
+    user_ip TEXT,
+    src TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+""")
 conn.commit()
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -48,6 +58,11 @@ def main(data, address):
         ip, expire_time = cache[domain]
         if time.time() < expire_time:
             reply.add_answer(RR(domain, QTYPE.A, rdata=A(ip)))
+            cursor.execute(
+                "INSERT INTO logs(domain, user_ip, src) VALUES (?, ?, ?)",
+                (domain, address[0], "cache")
+            )
+            conn.commit()
             return reply
         else:
             del cache[domain]
@@ -58,6 +73,11 @@ def main(data, address):
         ip = row[0]
         cache[domain] = (ip, time.time() + CACHE_TTL)
         reply.add_answer(RR(domain, QTYPE.A, rdata=A(ip)))
+        cursor.execute(
+            "INSERT INTO logs(domain, user_ip, src) VALUES (?, ?, ?)",
+            (domain, address[0], "data base")
+        )
+        conn.commit()
         return reply
 
     ip = ask_upstream_dns(domain)
@@ -70,6 +90,11 @@ def main(data, address):
         """, (domain, ip))
         conn.commit()
         reply.add_answer(RR(domain, QTYPE.A, rdata=A(ip)))
+        cursor.execute(
+            "INSERT INTO logs(domain, user_ip, src) VALUES (?, ?, ?)",
+            (domain, address[0], "upstream")
+        )
+        conn.commit()
     else:
         reply.header.rcode = RCODE.NXDOMAIN
 
