@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS logs (
 )
 """)
 
-cursor.execute("""CREATE TABLE blacklist (domain TEXT UNIQUE)""")
+cursor.execute("""CREATE TABLE IF NOT EXISTS blacklist (domain TEXT UNIQUE)""")
 conn.commit()
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
