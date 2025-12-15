@@ -25,3 +25,4 @@ Thumbs.db
 
 # database
 dns.db
+dns_db.session.sql

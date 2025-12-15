@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS logs (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )
 """)
+
+cursor.execute("""CREATE TABLE blacklist (domain TEXT UNIQUE)""")
 conn.commit()
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -54,6 +56,11 @@ def main(data, address):
         reply.header.rcode = RCODE.NOTIMP
         return reply
 
+    cursor.execute("SELECT 1 FROM blacklist WHERE domain = ?", (domain,))
+    if cursor.fetchone():
+        reply.header.rcode = RCODE.NXDOMAIN
+        return reply
+    
     if domain in cache:
         ip, expire_time = cache[domain]
         if time.time() < expire_time:
