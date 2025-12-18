@@ -38,7 +38,7 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind(("0.0.0.0", DNS_PORT))
 
 def ask_upstream_dns(domain):
-    query = DNSRecord.question(domain, QTYPE.A)
+    query = DNSRecord.question(domain, "A")
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(3)
 
@@ -88,26 +88,31 @@ def main(data, address):
         else:
             del cache[domain]
 
-    cursor.execute("SELECT ip FROM records WHERE domain = ?", (domain,))
+    cursor.execute("SELECT ip, ttl FROM records WHERE domain = ?", (domain,))
     row = cursor.fetchone()
     if row:
-        ip = row[0]
-        cache[domain] = (ip, time.time() + DEFAULT_TTL)
+        ip, ttl = row
+        ttl = ttl if ttl else DEFAULT_TTL
+
+        cache[domain] = (ip, time.time() + ttl)
         reply.add_answer(RR(domain, QTYPE.A, rdata=A(ip)))
         cursor.execute(
             "INSERT INTO logs(domain, user_ip, src) VALUES (?, ?, ?)",
-            (domain, address[0], "data base")
+            (domain, address[0], "database")
         )
         conn.commit()
         return reply
 
     ip, ttl = ask_upstream_dns(domain)
+    ttl = ttl if ttl else DEFAULT_TTL
     if ip:
-        cache[domain] = (ip, time.time() + ttl if ttl else DEFAULT_TTL) 
+        cache[domain] = (ip,time.time() + ttl) 
         cursor.execute("""
             INSERT INTO records(domain, ip, ttl)
             VALUES (?, ?, ?)
-            ON CONFLICT(domain) DO UPDATE SET ip = excluded.ip
+            ON CONFLICT(domain) DO UPDATE SET
+            ip = excluded.ip,
+            ttl = excluded.ttl
         """, (domain, ip, ttl))
         conn.commit()
         reply.add_answer(RR(domain, QTYPE.A, rdata=A(ip)))
