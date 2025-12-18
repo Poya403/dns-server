@@ -6,7 +6,7 @@ from dnslib import DNSRecord, RR, A, QTYPE, RCODE
 DNS_PORT = 53
 DB_FILE = "dns.db"
 UPSTREAM_DNS = ("8.8.8.8", DNS_PORT)
-CACHE_TTL = 60
+DEFAULT_TTL = 60
 
 cache = {}
 
@@ -16,7 +16,8 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     domain TEXT UNIQUE,
-    ip TEXT
+    ip TEXT,
+    ttl INTEGER DEFAULT 60
 )
 """)
 
@@ -37,11 +38,24 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind(("0.0.0.0", DNS_PORT))
 
 def ask_upstream_dns(domain):
+    query = DNSRecord.question(domain, QTYPE.A)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(3)
+
     try:
-        ip = socket.gethostbyname(domain)
-        return ip
+        sock.sendto(query.pack() , UPSTREAM_DNS)
+        data, _ = sock.recvfrom(512)
+        response = DNSRecord.parse(data)
+
+        for rr in response.rr:
+            if rr.rtype == QTYPE.A:
+                ip = str(rr.rdata)
+                ttl = rr.ttl
+                return ip, ttl
     except:
-        return None
+        return None, None
+    finally:
+        sock.close()
 
 
 def main(data, address):
@@ -78,7 +92,7 @@ def main(data, address):
     row = cursor.fetchone()
     if row:
         ip = row[0]
-        cache[domain] = (ip, time.time() + CACHE_TTL)
+        cache[domain] = (ip, time.time() + DEFAULT_TTL)
         reply.add_answer(RR(domain, QTYPE.A, rdata=A(ip)))
         cursor.execute(
             "INSERT INTO logs(domain, user_ip, src) VALUES (?, ?, ?)",
@@ -87,14 +101,14 @@ def main(data, address):
         conn.commit()
         return reply
 
-    ip = ask_upstream_dns(domain)
+    ip, ttl = ask_upstream_dns(domain)
     if ip:
-        cache[domain] = (ip, time.time() + CACHE_TTL) 
+        cache[domain] = (ip, time.time() + ttl if ttl else DEFAULT_TTL) 
         cursor.execute("""
-            INSERT INTO records(domain, ip)
-            VALUES (?, ?)
+            INSERT INTO records(domain, ip, ttl)
+            VALUES (?, ?, ?)
             ON CONFLICT(domain) DO UPDATE SET ip = excluded.ip
-        """, (domain, ip))
+        """, (domain, ip, ttl))
         conn.commit()
         reply.add_answer(RR(domain, QTYPE.A, rdata=A(ip)))
         cursor.execute(
