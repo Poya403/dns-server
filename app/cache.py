@@ -1,24 +1,19 @@
 import time
-from typing import List, Tuple
 
-# key = (domain, qtype) -> list of (value, expire_time)
-cache = {}
+cache = {}  # key = (domain, qtype) -> list of (value, expire_time)
 
-def get_from_cache(domain: str, qtype: str) -> List[str]:
+def get_cached(domain: str, qtype: str):
     key = (domain.lower(), qtype.upper())
-    results = []
     valid = []
     for val, expire in cache.get(key, []):
         if time.time() < expire:
-            results.append(val)
             valid.append((val, expire))
     if valid:
         cache[key] = valid
-    else:
-        cache.pop(key, None)
-    return results
+        return [v for v, e in valid]
+    return None
 
-def add_to_cache(domain: str, qtype: str, value: str, ttl: int):
+def set_cache(domain: str, qtype: str, values: list, ttl: int):
     key = (domain.lower(), qtype.upper())
     expire_time = time.time() + ttl
-    cache.setdefault(key, []).append((value, expire_time))
+    cache[key] = [(v, expire_time) for v in values]

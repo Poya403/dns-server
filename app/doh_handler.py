@@ -1,33 +1,39 @@
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, HTTPException
 from typing import List
-from app.data_base import Database
-from app.cache import get_from_cache, add_to_cache
-from app.models import DNSQuery, DNSResponse
+from app.models import DNSQuery, DNSRecordModel
+from app.data_base import add_record, delete_record, get_records
+from app.cache import get_cached, set_cache
+from app.dns_server import query_dns
 
 router = APIRouter()
-db = Database()
 
-DEFAULT_TTL = 60
-
-@router.get("/query-dns", response_model=List[DNSResponse])
-async def query_dns_get(name: str, type: str):
-    return await resolve_dns(name, type)
-
-@router.post("/query-dns", response_model=List[DNSResponse])
-async def query_dns_post(query: DNSQuery):
-    return await resolve_dns(query.name, query.type)
-
-async def resolve_dns(domain: str, qtype: str) -> List[DNSResponse]:
-    cached = get_from_cache(domain, qtype)
+@router.get("/query-dns")
+async def doh_get(domain: str, qtype: str = "A"):
+    cached = get_cached(domain, qtype)
     if cached:
-        return [DNSResponse(name=domain, type=qtype.upper(), value=v, ttl=DEFAULT_TTL) for v in cached]
-    
-    records = db.get_records(domain, qtype)
-    if records:
-        responses = []
-        for val, ttl in records:
-            add_to_cache(domain, qtype, val, ttl)
-            responses.append(DNSResponse(name=domain, type=qtype.upper(), value=val, ttl=ttl))
-        return responses
+        return [{"domain": domain, "qtype": qtype, "value": val, "ttl": 60} for val in cached]
 
-    raise HTTPException(status_code=404, detail="DNS record not found")
+    records = query_dns(domain, qtype)
+    if not records:
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    set_cache(domain, qtype, [r["value"] for r in records], ttl=records[0]["ttl"])
+    return records
+
+@router.post("/query-dns")
+async def doh_post(query: DNSQuery):
+    return await doh_get(query.domain, query.qtype)
+
+@router.post("/admin/record")
+async def add_dns_record(record: DNSRecordModel):
+    add_record(record)
+    return {"status": "success", "record": record}
+
+@router.delete("/admin/record/{domain}")
+async def delete_dns_record(domain: str, qtype: str = None):
+    delete_record(domain, qtype)
+    return {"status": "success", "domain": domain, "qtype": qtype}
+
+@router.get("/admin/record")
+async def list_records(domain: str = None, qtype: str = None):
+    return get_records(domain, qtype)

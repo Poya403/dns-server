@@ -1,11 +1,13 @@
 from pydantic import BaseModel
+from typing import Optional
 
 class DNSQuery(BaseModel):
-    name: str
-    type: str
+    domain: str
+    qtype: str = "A"
 
-class DNSResponse(BaseModel):
-    name: str
-    type: str
+class DNSRecordModel(BaseModel):
+    domain: str
+    qtype: str
     value: str
-    ttl: int
+    ttl: int = 60
+    priority: Optional[int] = None

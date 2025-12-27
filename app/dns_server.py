@@ -1,48 +1,18 @@
 import socket
 import sqlite3
 import time
+import os
 from threading import Thread
 from dnslib import DNSRecord, RR, QTYPE, RCODE, A, NS, MX, CNAME
+from app.data_base import get_connection
 
-DB_FILE = "db/records.db"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_FILE = os.path.join(BASE_DIR, "db", "records.db")
 DNS_PORT = 53
 UPSTREAM_DNS = ("8.8.8.8", 53)
 DEFAULT_TTL = 60
 
-cache = {}  # key = (domain, qtype_num) -> list of (value, expire_time)
-
-
-conn = sqlite3.connect(DB_FILE, check_same_thread=False)
-cursor = conn.cursor()
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS records (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    domain TEXT NOT NULL,
-    qtype TEXT NOT NULL,
-    value TEXT NOT NULL,
-    ttl INTEGER DEFAULT 60,
-    UNIQUE(domain, qtype, value)
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    domain TEXT,
-    qtype TEXT,
-    user_ip TEXT,
-    src TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS blacklist (
-    domain TEXT PRIMARY KEY
-)
-""")
-conn.commit()
+cache = {}
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind(("0.0.0.0", DNS_PORT))
@@ -62,25 +32,59 @@ def ask_upstream(domain, qtype="A"):
     finally:
         s.close()
 
+def query_dns(domain: str, qtype: str = "A"):
+    qtype = qtype.upper()
+    qtype_num = QTYPE[qtype]
+    key = (domain, qtype_num)
+    valid_rrs = []
+    cached_list = cache.get(key, [])
+    for val, expire in cached_list:
+        if time.time() < expire:
+            valid_rrs.append((val, expire))
+    if valid_rrs:
+        return [{"domain": domain, "qtype": qtype, "value": val, "ttl": DEFAULT_TTL} for val, _ in valid_rrs]
+    conn, cursor = get_connection()
+    cursor.execute("SELECT value, ttl FROM records WHERE domain=? AND qtype=?", (domain, qtype))
+    rows = cursor.fetchall()
+    if rows:
+        result = []
+        for value, ttl in rows:
+            ttl = ttl or DEFAULT_TTL
+            valid_rrs.append((value, time.time() + ttl))
+            result.append({"domain": domain, "qtype": qtype, "value": value, "ttl": ttl})
+        cache[key] = valid_rrs
+        return result
+    response = ask_upstream(domain, qtype)
+    if response:
+        result = []
+        for rr in response.rr:
+            rr_qtype = rr.rtype
+            rr_str_type = QTYPE[rr_qtype]
+            val = str(rr.rdata)
+            ttl = rr.ttl or DEFAULT_TTL
+            k = (str(rr.rname).rstrip("."), rr_qtype)
+            cache.setdefault(k, []).append((val, time.time() + ttl))
+            conn, cursor = get_connection()
+            cursor.execute("""
+                INSERT INTO records(domain, qtype, value, ttl)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(domain, qtype, value) DO UPDATE SET ttl = excluded.ttl
+            """, (str(rr.rname).rstrip("."), rr_str_type, val, ttl))
+            conn.commit()
+            if rr_str_type == qtype:
+                result.append({"domain": str(rr.rname).rstrip("."), "qtype": rr_str_type, "value": val, "ttl": ttl})
+        return result
+    return []
+
 def handle_request(data, addr):
     req = DNSRecord.parse(data)
     rep = req.reply()
     domain = str(req.q.qname).rstrip(".").lower()
     qtype_num = req.q.qtype
     qtype_str = QTYPE[qtype_num]
-
-    print(f"{addr[0]} -> {domain} ({qtype_str})")
-
-    cursor.execute("SELECT 1 FROM blacklist WHERE domain=?", (domain,))
-    if cursor.fetchone():
-        rep.header.rcode = RCODE.NXDOMAIN
-        sock.sendto(rep.pack(), addr)
-        return
-
     key = (domain, qtype_num)
-
-    valid_rrs = []
     cached_list = cache.get(key, [])
+    valid_rrs = []
     for val, expire in cached_list:
         if time.time() < expire:
             valid_rrs.append((val, expire))
@@ -89,16 +93,15 @@ def handle_request(data, addr):
                 rep.add_answer(RR(domain, qtype_num, rdata=rdata_cls(val), ttl=DEFAULT_TTL))
     if valid_rrs:
         cache[key] = valid_rrs
-        cursor.execute(
-            "INSERT INTO logs(domain, qtype, user_ip, src) VALUES (?, ?, ?, ?)",
-            (domain, qtype_str, addr[0], "cache")
-        )
+        conn, cursor = get_connection()
+        cursor.execute("INSERT INTO logs(domain, qtype, user_ip, src) VALUES (?, ?, ?, ?)", (domain, qtype_str, addr[0], "cache"))
         conn.commit()
         sock.sendto(rep.pack(), addr)
         return
     else:
         cache.pop(key, None)
 
+    conn, cursor = get_connection()
     cursor.execute("SELECT value, ttl FROM records WHERE domain=? AND qtype=?", (domain, qtype_str))
     rows = cursor.fetchall()
     if rows:
@@ -110,14 +113,11 @@ def handle_request(data, addr):
             if rdata_cls:
                 rep.add_answer(RR(domain, qtype_num, rdata=rdata_cls(value), ttl=ttl))
         cache[key] = valid_rrs
-        cursor.execute(
-            "INSERT INTO logs(domain, qtype, user_ip, src) VALUES (?, ?, ?, ?)",
-            (domain, qtype_str, addr[0], "database")
-        )
+        conn, cursor = get_connection()
+        cursor.execute("INSERT INTO logs(domain, qtype, user_ip, src) VALUES (?, ?, ?, ?)", (domain, qtype_str, addr[0], "database"))
         conn.commit()
         sock.sendto(rep.pack(), addr)
         return
-
     response = ask_upstream(domain, qtype_str)
     if response:
         for rr in response.rr:
@@ -127,15 +127,16 @@ def handle_request(data, addr):
             ttl = rr.ttl or DEFAULT_TTL
             k = (str(rr.rname).rstrip("."), rr_qtype)
             cache.setdefault(k, []).append((val, time.time() + ttl))
+
+            conn, cursor = get_connection()
             cursor.execute("""
                 INSERT INTO records(domain, qtype, value, ttl)
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(domain, qtype, value) DO UPDATE SET ttl = excluded.ttl
             """, (str(rr.rname).rstrip("."), rr_str_type, val, ttl))
-            cursor.execute(
-                "INSERT INTO logs(domain, qtype, user_ip, src) VALUES (?, ?, ?, ?)",
-                (str(rr.rname).rstrip("."), rr_str_type, addr[0], "upstream")
-            )
+            
+            conn, cursor = get_connection()
+            cursor.execute("INSERT INTO logs(domain, qtype, user_ip, src) VALUES (?, ?, ?, ?)", (str(rr.rname).rstrip("."), rr_str_type, addr[0], "upstream"))
             if rr_qtype == qtype_num:
                 rdata_cls = rdata_map.get(rr_str_type)
                 if rdata_cls:
@@ -143,11 +144,9 @@ def handle_request(data, addr):
         conn.commit()
     else:
         rep.header.rcode = RCODE.SERVFAIL
-
     sock.sendto(rep.pack(), addr)
 
 def start_udp_server():
-    print(f"DNS UDP Server running on port {DNS_PORT} ...")
     while True:
         data, addr = sock.recvfrom(512)
         Thread(target=handle_request, args=(data, addr)).start()

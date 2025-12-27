@@ -24,5 +24,4 @@ Thumbs.db
 .env
 
 # database
-dns.db
-dns_db.session.sql
+records.db
