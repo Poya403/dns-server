@@ -79,74 +79,115 @@ def query_dns(domain: str, qtype: str = "A"):
 def handle_request(data, addr):
     req = DNSRecord.parse(data)
     rep = req.reply()
+
     domain = str(req.q.qname).rstrip(".").lower()
-    qtype_num = req.q.qtype
-    qtype_str = QTYPE[qtype_num]
-    key = (domain, qtype_num)
-    cached_list = cache.get(key, [])
-    valid_rrs = []
-    for val, expire in cached_list:
-        if time.time() < expire:
-            valid_rrs.append((val, expire))
-            rdata_cls = rdata_map.get(qtype_str)
-            if rdata_cls:
-                rep.add_answer(RR(domain, qtype_num, rdata=rdata_cls(val), ttl=DEFAULT_TTL))
-    if valid_rrs:
-        cache[key] = valid_rrs
-        conn, cursor = get_connection()
-        cursor.execute("INSERT INTO logs(domain, qtype, user_ip, src) VALUES (?, ?, ?, ?)", (domain, qtype_str, addr[0], "cache"))
+    qtype_str = QTYPE[req.q.qtype]
+
+    key = (domain, qtype_str)
+
+    # -------- 1. CACHE --------
+    cached = cache.get(key, [])
+    valid = [(v, e) for v, e in cached if time.time() < e]
+
+    if valid:
+        for value, _ in valid:
+            if qtype_str == "MX":
+                pref, exch = value.split()
+                rep.add_answer(RR(domain, QTYPE.MX, rdata=MX(int(pref), exch), ttl=DEFAULT_TTL))
+            else:
+                rep.add_answer(RR(domain, req.q.qtype, rdata=rdata_map[qtype_str](value), ttl=DEFAULT_TTL))
+
+        cache[key] = valid
+        conn, cur = get_connection()
+        cur.execute(
+            "INSERT INTO logs(domain, qtype, user_ip, src) VALUES (?, ?, ?, ?)",
+            (domain, qtype_str, addr[0], "cache")
+        )
         conn.commit()
         sock.sendto(rep.pack(), addr)
         return
-    else:
-        cache.pop(key, None)
 
-    conn, cursor = get_connection()
-    cursor.execute("SELECT value, ttl FROM records WHERE domain=? AND qtype=?", (domain, qtype_str))
-    rows = cursor.fetchall()
+    cache.pop(key, None)
+
+    # -------- 2. DATABASE --------
+    conn, cur = get_connection()
+    cur.execute(
+        "SELECT value, ttl FROM records WHERE domain=? AND qtype=?",
+        (domain, qtype_str)
+    )
+    rows = cur.fetchall()
+
     if rows:
-        valid_rrs = []
+        new_cache = []
         for value, ttl in rows:
             ttl = ttl or DEFAULT_TTL
-            valid_rrs.append((value, time.time() + ttl))
-            rdata_cls = rdata_map.get(qtype_str)
-            if rdata_cls:
-                rep.add_answer(RR(domain, qtype_num, rdata=rdata_cls(value), ttl=ttl))
-        cache[key] = valid_rrs
-        conn, cursor = get_connection()
-        cursor.execute("INSERT INTO logs(domain, qtype, user_ip, src) VALUES (?, ?, ?, ?)", (domain, qtype_str, addr[0], "database"))
+            expire = time.time() + ttl
+            new_cache.append((value, expire))
+
+            if qtype_str == "MX":
+                pref, exch = value.split()
+                rep.add_answer(RR(domain, QTYPE.MX, rdata=MX(int(pref), exch), ttl=ttl))
+            else:
+                rep.add_answer(RR(domain, req.q.qtype, rdata=rdata_map[qtype_str](value), ttl=ttl))
+
+        cache[key] = new_cache
+        cur.execute(
+            "INSERT INTO logs(domain, qtype, user_ip, src) VALUES (?, ?, ?, ?)",
+            (domain, qtype_str, addr[0], "database")
+        )
         conn.commit()
         sock.sendto(rep.pack(), addr)
         return
-    response = ask_upstream(domain, qtype_str)
-    if response:
-        for rr in response.rr:
-            rr_qtype = rr.rtype
-            rr_str_type = QTYPE[rr_qtype]
-            val = str(rr.rdata)
-            ttl = rr.ttl or DEFAULT_TTL
-            k = (str(rr.rname).rstrip("."), rr_qtype)
-            cache.setdefault(k, []).append((val, time.time() + ttl))
 
-            conn, cursor = get_connection()
-            cursor.execute("""
-                INSERT INTO records(domain, qtype, value, ttl)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(domain, qtype, value) DO UPDATE SET ttl = excluded.ttl
-            """, (str(rr.rname).rstrip("."), rr_str_type, val, ttl))
-            
-            conn, cursor = get_connection()
-            cursor.execute("INSERT INTO logs(domain, qtype, user_ip, src) VALUES (?, ?, ?, ?)", (str(rr.rname).rstrip("."), rr_str_type, addr[0], "upstream"))
-            if rr_qtype == qtype_num:
-                rdata_cls = rdata_map.get(rr_str_type)
-                if rdata_cls:
-                    rep.add_answer(RR(str(rr.rname).rstrip("."), rr_qtype, rdata=rdata_cls(val), ttl=ttl))
-        conn.commit()
-    else:
+    # -------- 3. UPSTREAM --------
+    response = ask_upstream(domain, qtype_str)
+    if not response:
         rep.header.rcode = RCODE.SERVFAIL
+        sock.sendto(rep.pack(), addr)
+        return
+
+    all_rrs = response.rr + response.auth + response.ar
+
+    for rr in all_rrs:
+        rr_domain = str(rr.rname).rstrip(".").lower()
+        rr_type = QTYPE[rr.rtype]
+        ttl = rr.ttl or DEFAULT_TTL
+
+        if rr_type == "MX":
+            value = f"{rr.rdata.preference} {rr.rdata.exchange}"
+        else:
+            value = str(rr.rdata)
+
+        expire = time.time() + ttl
+        cache.setdefault((rr_domain, rr_type), []).append((value, expire))
+
+        conn, cur = get_connection()
+        cur.execute("""
+            INSERT INTO records(domain, qtype, value, ttl)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(domain, qtype, value)
+            DO UPDATE SET ttl=excluded.ttl
+        """, (rr_domain, rr_type, value, ttl))
+
+        cur.execute(
+            "INSERT INTO logs(domain, qtype, user_ip, src) VALUES (?, ?, ?, ?)",
+            (rr_domain, rr_type, addr[0], "upstream")
+        )
+        conn.commit()
+
+        if rr_domain == domain and rr_type == qtype_str:
+            if rr_type == "MX":
+                pref, exch = value.split()
+                rep.add_answer(RR(domain, QTYPE.MX, rdata=MX(int(pref), exch), ttl=ttl))
+            else:
+                rep.add_answer(RR(domain, rr.rtype, rdata=rdata_map[rr_type](value), ttl=ttl))
+
     sock.sendto(rep.pack(), addr)
 
 def start_udp_server():
     while True:
-        data, addr = sock.recvfrom(512)
-        Thread(target=handle_request, args=(data, addr)).start()
+        try:
+            data, addr = sock.recvfrom(512)
+            Thread(target=handle_request, args=(data, addr)).start()
+        except ConnectionResetError:
+            continue
