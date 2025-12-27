@@ -1,16 +1,18 @@
 import socket
 import sqlite3
 import time
+from threading import Thread
 from dnslib import DNSRecord, RR, QTYPE, RCODE, A, NS, MX, CNAME
 
+DB_FILE = "db/records.db"
 DNS_PORT = 53
 UPSTREAM_DNS = ("8.8.8.8", 53)
-DB_FILE = "dns.db"
 DEFAULT_TTL = 60
 
 cache = {}  # key = (domain, qtype_num) -> list of (value, expire_time)
 
-conn = sqlite3.connect(DB_FILE)
+
+conn = sqlite3.connect(DB_FILE, check_same_thread=False)
 cursor = conn.cursor()
 
 cursor.execute("""
@@ -45,33 +47,24 @@ conn.commit()
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind(("0.0.0.0", DNS_PORT))
 
-rdata_map = {
-    "A": A,
-    "NS": NS,
-    "MX": MX,
-    "CNAME": CNAME
-}
+rdata_map = {"A": A, "NS": NS, "MX": MX, "CNAME": CNAME}
 
 def ask_upstream(domain, qtype="A"):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(3)
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(3)
     try:
         q = DNSRecord.question(domain, qtype)
-        sock.sendto(q.pack(), UPSTREAM_DNS)
-        r = DNSRecord.parse(sock.recvfrom(512)[0])
+        s.sendto(q.pack(), UPSTREAM_DNS)
+        r = DNSRecord.parse(s.recvfrom(512)[0])
         return r
     except:
         return None
     finally:
-        sock.close()
+        s.close()
 
-print(f"DNS Server running on port {DNS_PORT} ...")
-
-while True:
-    data, addr = sock.recvfrom(512)
+def handle_request(data, addr):
     req = DNSRecord.parse(data)
     rep = req.reply()
-
     domain = str(req.q.qname).rstrip(".").lower()
     qtype_num = req.q.qtype
     qtype_str = QTYPE[qtype_num]
@@ -82,12 +75,12 @@ while True:
     if cursor.fetchone():
         rep.header.rcode = RCODE.NXDOMAIN
         sock.sendto(rep.pack(), addr)
-        continue
+        return
 
     key = (domain, qtype_num)
 
-    cached_list = cache.get(key, [])
     valid_rrs = []
+    cached_list = cache.get(key, [])
     for val, expire in cached_list:
         if time.time() < expire:
             valid_rrs.append((val, expire))
@@ -102,7 +95,7 @@ while True:
         )
         conn.commit()
         sock.sendto(rep.pack(), addr)
-        continue
+        return
     else:
         cache.pop(key, None)
 
@@ -123,32 +116,26 @@ while True:
         )
         conn.commit()
         sock.sendto(rep.pack(), addr)
-        continue
+        return
 
     response = ask_upstream(domain, qtype_str)
     if response:
-        cache_list = []
         for rr in response.rr:
             rr_qtype = rr.rtype
             rr_str_type = QTYPE[rr_qtype]
             val = str(rr.rdata)
             ttl = rr.ttl or DEFAULT_TTL
-
             k = (str(rr.rname).rstrip("."), rr_qtype)
             cache.setdefault(k, []).append((val, time.time() + ttl))
-
             cursor.execute("""
                 INSERT INTO records(domain, qtype, value, ttl)
                 VALUES (?, ?, ?, ?)
-                ON CONFLICT(domain, qtype, value) DO UPDATE SET
-                    ttl = excluded.ttl
+                ON CONFLICT(domain, qtype, value) DO UPDATE SET ttl = excluded.ttl
             """, (str(rr.rname).rstrip("."), rr_str_type, val, ttl))
-
             cursor.execute(
                 "INSERT INTO logs(domain, qtype, user_ip, src) VALUES (?, ?, ?, ?)",
                 (str(rr.rname).rstrip("."), rr_str_type, addr[0], "upstream")
             )
-
             if rr_qtype == qtype_num:
                 rdata_cls = rdata_map.get(rr_str_type)
                 if rdata_cls:
@@ -158,3 +145,9 @@ while True:
         rep.header.rcode = RCODE.SERVFAIL
 
     sock.sendto(rep.pack(), addr)
+
+def start_udp_server():
+    print(f"DNS UDP Server running on port {DNS_PORT} ...")
+    while True:
+        data, addr = sock.recvfrom(512)
+        Thread(target=handle_request, args=(data, addr)).start()
