@@ -49,7 +49,7 @@ body > div:first-of-type {
     max-width: 500px;
     min-height: 120px;
     max-height: 580px;
-    overflow: auto;
+    overflow-y: auto;
     background: white;
     border-radius: 16px;
     padding: 20px;
@@ -108,6 +108,7 @@ button {
     cursor: pointer;
     font-size: 12px;
     transition: transform 0.2s, box-shadow 0.2s;
+    margin: 5px;
 }
 
 button:hover {
@@ -144,11 +145,15 @@ body.dark .container > p {
 
 body.dark .requests-box {
     border-color: #555;
-    color: #aaa;
+    color: #000000;
 }
 
 body.dark .theme-btn {
     background: #333;
+    color: #ffffff;
+}
+
+body.dark p{
     color: white;
 }
 
@@ -157,3 +162,4 @@ body.dark .theme-btn {
         width: 90%;
     }
 }
+

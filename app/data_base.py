@@ -91,3 +91,9 @@ def get_records(domain: str = None, qtype: str = None):
     conn.close()
     return [{"domain": r[0], "qtype": r[1], "value": r[2], "ttl": r[3], "priority": r[4]} for r in rows]
 
+def get_logs(domain: str = None, qtype: str = None):
+    conn, cursor = get_connection()
+    cursor.execute("SELECT domain, qtype, user_ip, src, created_at FROM logs ORDER BY id DESC LIMIT 100")
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"domain": r[0], "qtype": r[1], "user_ip": r[2], "src": r[3], "created_at" : r[4]} for r in rows]

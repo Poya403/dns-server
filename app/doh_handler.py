@@ -1,6 +1,6 @@
 from fastapi import HTTPException, APIRouter
 from app.models import DNSQuery, DNSRecordModel
-from app.data_base import add_record, delete_record, get_records
+from app.data_base import add_record, delete_record, get_records, get_logs
 from app.cache import get_cached, set_cache
 from app.dns_server import query_dns
 
@@ -37,10 +37,6 @@ def delete_dns_record(domain: str, qtype: str = None):
 async def list_records(domain: str = None, qtype: str = None):
     return get_records(domain, qtype)
 
-# @router.get("/admin/logs")
-# def list_logs():
-#     conn, cursor = get_connection()
-#     cursor.execute("SELECT domain, qtype, user_ip FROM logs ORDER BY id DESC LIMIT 100")
-#     rows = cursor.fetchall()
-#     conn.close()
-#     return [{"domain": r[0], "qtype": r[1], "client_ip": r[2]} for r in rows]
+@router.get("/admin/logs")
+def list_logs(domain: str = None, qtype: str = None):
+    return get_logs(domain, qtype)

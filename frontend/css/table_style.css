@@ -1,0 +1,97 @@
+.records-table {
+    width: 50%;
+    border-collapse: collapse;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin: 10px;
+}
+
+.records-table thead tr {
+    background-color: #4CAF50;
+    color: white;
+    text-align: left;
+}
+
+.records-table th,
+.records-table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #ddd;
+}
+
+.records-table tbody tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+.records-table tbody tr:hover {
+    background-color: #f1f1f1;
+    cursor: pointer;
+}
+
+.logs-table {
+    width: 50%;
+    border-collapse: collapse;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin: 10px;
+}
+
+.logs-table thead tr {
+    background-color: #4CAF50;
+    color: white;
+    text-align: left;
+}
+
+.logs-table th,
+.logs-table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #ddd;
+}
+
+.logs-table tbody tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+.logs-table tbody tr:hover {
+    background-color: #f1f1f1;
+    cursor: pointer;
+}
+
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    overflow-x: auto;
+}
+
+th, td {
+    border: 1px solid #ccc;
+    padding: 8px 12px;
+    text-align: left;
+}
+
+th {
+    background-color: #007bff;
+    color: white;
+}
+
+body.dark th {
+    background-color: #4a90e2;
+}
+
+tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+body.dark tr:nth-child(even) {
+    background-color: #2c2c2c;
+}
+
+tr:nth-child(odd) {
+    background-color: #fff;
+}
+
+body.dark tr:nth-child(odd) {
+    background-color: #1e1e1e;
+}

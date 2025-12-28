@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DNS Panel</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/table_style.css">
 </head>
 <body>
     <div>
@@ -18,16 +19,36 @@
             <button class="add_btn">افزودن رکورد</button>
             <button class="del_btn">حذف رکورد</button>
         </div>
-        <div id="records-box" class="requests-box">
-            <p>هنوز رکوردی ثبت نشده است</p>
-        </div>
+        
+        <table class="records-table">
+        <thead>
+            <tr>
+                <th>دامنه</th>
+                <th>نوع</th>
+                <th>مقدار</th>
+                <th>TTL</th>
+            </tr>
+        </thead>
+        <tbody id="records-box">
+        </tbody>
+    </table>
     </div>
 
     <div class="container">
         <p>لیست درخواست‌ها</p>
-        <div id="logs-box" class="requests-box">
-            <p>هنوز درخواستی ثبت نشده است</p>
-        </div>
+        <table class="logs-table">
+        <thead>
+        <tr>
+            <th>دامنه</th>
+            <th>نوع درخواست</th>
+            <th>IP کاربر</th>
+            <th>Source</th>
+            <th>زمان</th>
+        </tr>
+        </thead>
+
+        <tbody id="logs-box">
+        </tbody>
     </div>
 
     <script src="js/api.js"></script>

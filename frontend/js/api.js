@@ -3,74 +3,92 @@ async function loadRecords() {
         const res = await fetch("/admin/records");
         const data = await res.json();
 
-        const box = document.getElementById("records-box");
-        box.innerHTML = "";
+        const tbody = document.getElementById("records-box");
+        tbody.innerHTML = "";
 
         if (data.length === 0) {
-            box.innerHTML = "<p>رکوردی وجود ندارد</p>";
+            const tr = document.createElement("tr");
+            const td = document.createElement("td");
+            td.colSpan = 4;
+            td.textContent = "رکوردی وجود ندارد";
+            td.style.textAlign = "center";
+            tr.appendChild(td);
+            tbody.appendChild(tr);
             return;
         }
 
-        const table = document.createElement("table");
-        table.style.width = "100%";
-        table.style.borderCollapse = "collapse";
-
-        const thead = document.createElement("thead");
-        const headerRow = document.createElement("tr");
-        ["Domain", "QType", "Value", "TTL"].forEach(text => {
-            const th = document.createElement("th");
-            th.textContent = text;
-            th.style.border = "1px solid #ccc";
-            th.style.padding = "8px";
-            th.style.textAlign = "left";
-            headerRow.appendChild(th);
-        });
-        thead.appendChild(headerRow);
-        table.appendChild(thead);
-
-        const tbody = document.createElement("tbody");
         data.forEach(r => {
-            const row = document.createElement("tr");
-            [r.domain, r.qtype, r.value, r.ttl].forEach(val => {
-                const td = document.createElement("td");
-                td.textContent = val;
-                td.style.border = "1px solid #ccc";
-                td.style.padding = "8px";
-                row.appendChild(td);
-            });
-            tbody.appendChild(row);
-        });
-        table.appendChild(tbody);
+            const tr = document.createElement("tr");
 
-        box.appendChild(table);
+            const tdDomain = document.createElement("td");
+            tdDomain.textContent = r.domain;
+            tr.appendChild(tdDomain);
+
+            const tdQtype = document.createElement("td");
+            tdQtype.textContent = r.qtype;
+            tr.appendChild(tdQtype);
+
+            const tdValue = document.createElement("td");
+            tdValue.textContent = r.value;
+            tr.appendChild(tdValue);
+
+            const tdTtl = document.createElement("td");
+            tdTtl.textContent = r.ttl;
+            tr.appendChild(tdTtl);
+
+            tbody.appendChild(tr);
+        });
     } catch (err) {
         console.error(err);
     }
 }
-
 
 async function loadLogs() {
     try {
         const res = await fetch("/admin/logs");
         const data = await res.json();
 
-        const box = document.getElementById("logs-box");
-        box.innerHTML = "";
+        const tbody = document.getElementById("logs-box");
+        tbody.innerHTML = "";
 
-        if (!data || data.length === 0) {
-            box.innerHTML = "<p>درخواستی ثبت نشده</p>";
+        if (data.length === 0) {
+            const tr = document.createElement("tr");
+            const td = document.createElement("td");
+            td.colSpan = 3;
+            td.textContent = "درخواستی ثبت نشده";
+            td.style.textAlign = "center";
+            tr.appendChild(td);
+            tbody.appendChild(tr);
             return;
         }
 
         data.forEach(log => {
-            const div = document.createElement("div");
-            div.textContent = `${log.domain} | ${log.qtype} | ${log.client_ip}`;
-            box.appendChild(div);
+            const tr = document.createElement("tr");
+
+            const tdDomain = document.createElement("td");
+            tdDomain.textContent = log.domain;
+            tr.appendChild(tdDomain);
+
+            const tdQtype = document.createElement("td");
+            tdQtype.textContent = log.qtype;
+            tr.appendChild(tdQtype);
+
+            const tdIp = document.createElement("td");
+            tdIp.textContent = log.user_ip;
+            tr.appendChild(tdIp);
+
+            const tdSrc = document.createElement("td");
+            tdSrc.textContent = log.src;
+            tr.appendChild(tdSrc);
+
+            const tdCreatedAt = document.createElement("td");
+            tdCreatedAt.textContent = log.created_at;
+            tr.appendChild(tdCreatedAt);
+
+            tbody.appendChild(tr);
         });
     } catch (err) {
         console.error(err);
-        const box = document.getElementById("logs-box");
-        box.innerHTML = "<p>خطا در بارگذاری لاگ‌ها</p>";
     }
 }
 
