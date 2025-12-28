@@ -3,7 +3,7 @@ import sqlite3
 import time
 import os
 from threading import Thread
-from dnslib import DNSRecord, RR, QTYPE, RCODE, A, NS, MX, CNAME
+from dnslib import DNSRecord, RR, QTYPE, RCODE, A, NS, MX, CNAME, DNSLabel
 from app.data_base import get_connection
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -32,6 +32,7 @@ def ask_upstream(domain, qtype="A"):
     finally:
         s.close()
 
+
 def store_record(domain: str, qtype: str, value: str, ttl: int):
     """ذخیره رکورد در دیتابیس به صورت رشته‌ای"""
     conn, cur = get_connection()
@@ -43,16 +44,16 @@ def store_record(domain: str, qtype: str, value: str, ttl: int):
     conn.commit()
     conn.close()
 
+
 def query_dns(domain: str, qtype: str = "A"):
+
     qtype = qtype.upper()
     key = (domain, qtype)
-    
-    # 1️⃣ بررسی cache
+
     valid_rrs = [(v, e) for v, e in cache.get(key, []) if time.time() < e]
     if valid_rrs:
         return [{"domain": domain, "qtype": qtype, "value": val, "ttl": DEFAULT_TTL} for val, _ in valid_rrs]
 
-    # 2️⃣ بررسی database
     conn, cursor = get_connection()
     cursor.execute("SELECT value, ttl FROM records WHERE domain=? AND qtype=?", (domain, qtype))
     rows = cursor.fetchall()
@@ -68,7 +69,6 @@ def query_dns(domain: str, qtype: str = "A"):
         conn.close()
         return result
 
-    # 3️⃣ دریافت از upstream
     response = ask_upstream(domain, qtype)
     if not response:
         return []
@@ -77,37 +77,40 @@ def query_dns(domain: str, qtype: str = "A"):
     all_rrs = response.rr + response.auth + response.ar
     for rr in all_rrs:
         rr_domain = str(rr.rname).rstrip(".").lower()
-        rr_type = QTYPE[rr.rtype]  # حتما رشته
+        rr_type = QTYPE[rr.rtype]
         ttl = rr.ttl or DEFAULT_TTL
-        value = f"{rr.rdata.preference} {rr.rdata.exchange}" if rr_type == "MX" else str(rr.rdata)
 
-        # cache
+        if rr_type == "MX":
+            value = f"{rr.rdata.preference} {str(rr.rdata.exchange)}"
+        else:
+            value = str(rr.rdata)
+
         expire = time.time() + ttl
         cache.setdefault((rr_domain, rr_type), []).append((value, expire))
 
-        # database
         store_record(rr_domain, rr_type, value, ttl)
 
-        # add to result only if matches original query
         if rr_domain == domain and rr_type == qtype:
             result.append({"domain": domain, "qtype": qtype, "value": value, "ttl": ttl})
 
     return result
+
 
 def handle_request(data, addr):
     try:
         req = DNSRecord.parse(data)
         rep = req.reply()
         domain = str(req.q.qname).rstrip(".").lower()
-        qtype_str = QTYPE[req.q.qtype]  # همیشه رشته
+        qtype_str = QTYPE[req.q.qtype]
 
-        # -------- 1. CACHE --------
         valid = [(v, e) for v, e in cache.get((domain, qtype_str), []) if time.time() < e]
         if valid:
             for value, _ in valid:
                 if qtype_str == "MX":
                     pref, exch = value.split()
-                    rep.add_answer(RR(domain, QTYPE.MX, rdata=MX(int(pref), exch), ttl=DEFAULT_TTL))
+                    if not exch.endswith("."):
+                        exch += "."
+                    rep.add_answer(RR(domain, QTYPE.MX, rdata=MX(int(pref), DNSLabel(exch)), ttl=DEFAULT_TTL))
                 else:
                     rep.add_answer(RR(domain, req.q.qtype, rdata=rdata_map[qtype_str](value), ttl=DEFAULT_TTL))
             cache[(domain, qtype_str)] = valid
@@ -123,7 +126,6 @@ def handle_request(data, addr):
 
         cache.pop((domain, qtype_str), None)
 
-        # -------- 2. DATABASE --------
         conn, cur = get_connection()
         cur.execute(
             "SELECT value, ttl FROM records WHERE domain=? AND qtype=?",
@@ -138,7 +140,9 @@ def handle_request(data, addr):
                 new_cache.append((value, expire))
                 if qtype_str == "MX":
                     pref, exch = value.split()
-                    rep.add_answer(RR(domain, QTYPE.MX, rdata=MX(int(pref), exch), ttl=ttl))
+                    if not exch.endswith("."):
+                        exch += "."
+                    rep.add_answer(RR(domain, QTYPE.MX, rdata=MX(int(pref), DNSLabel(exch)), ttl=ttl))
                 else:
                     rep.add_answer(RR(domain, req.q.qtype, rdata=rdata_map[qtype_str](value), ttl=ttl))
             cache[(domain, qtype_str)] = new_cache
@@ -151,7 +155,6 @@ def handle_request(data, addr):
             sock.sendto(rep.pack(), addr)
             return
 
-        # -------- 3. UPSTREAM --------
         upstream_records = query_dns(domain, qtype_str)
         if not upstream_records:
             rep.header.rcode = RCODE.SERVFAIL
@@ -161,11 +164,12 @@ def handle_request(data, addr):
         for r in upstream_records:
             if r["qtype"] == "MX":
                 pref, exch = r["value"].split()
-                rep.add_answer(RR(domain, QTYPE.MX, rdata=MX(int(pref), exch), ttl=r["ttl"]))
+                if not exch.endswith("."):
+                    exch += "."
+                rep.add_answer(RR(domain, QTYPE.MX, rdata=MX(int(pref), DNSLabel(exch)), ttl=r["ttl"]))
             else:
                 rep.add_answer(RR(domain, req.q.qtype, rdata=rdata_map[r["qtype"]](r["value"]), ttl=r["ttl"]))
 
-        # log upstream request
         conn, cur = get_connection()
         cur.execute(
             "INSERT INTO logs(domain, qtype, user_ip, src) VALUES (?, ?, ?, ?)",

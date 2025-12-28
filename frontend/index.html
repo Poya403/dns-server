@@ -6,6 +6,7 @@
     <title>DNS Panel</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/table_style.css">
+    <link rel="stylesheet" href="css/modal_record_form.css">
 </head>
 <body>
     <div>
@@ -15,11 +16,12 @@
 
     <div class="container">
         <p>لیست رکوردها</p>
+
         <div class="actions">
-            <button class="add_btn">افزودن رکورد</button>
-            <button class="del_btn">حذف رکورد</button>
+            <button id="openFormBtn" class="add_btn">افزودن رکورد جدید</button>
         </div>
-        
+
+
         <table class="records-table">
         <thead>
             <tr>
@@ -27,6 +29,7 @@
                 <th>نوع</th>
                 <th>مقدار</th>
                 <th>TTL</th>
+                <th>عملیات</th>
             </tr>
         </thead>
         <tbody id="records-box">
@@ -37,21 +40,68 @@
     <div class="container">
         <p>لیست درخواست‌ها</p>
         <table class="logs-table">
-        <thead>
-        <tr>
-            <th>دامنه</th>
-            <th>نوع درخواست</th>
-            <th>IP کاربر</th>
-            <th>Source</th>
-            <th>زمان</th>
-        </tr>
-        </thead>
+            <thead>
+            <tr>
+                <th>دامنه</th>
+                <th>نوع درخواست</th>
+                <th>IP کاربر</th>
+                <th>Source</th>
+                <th>زمان</th>
+            </tr>
+            </thead>
 
-        <tbody id="logs-box">
-        </tbody>
+            <tbody id="logs-box">
+            </tbody>
+        </table>
     </div>
 
+    <div id="recordModal" class="modal hidden">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>افزودن رکورد DNS</h3>
+            <button id="closeModalBtn" class="close-btn">✖</button>
+        </div>
+
+        <form id="addRecordForm" class="record-form">
+            <div class="field">
+                <input type="text" id="domain" placeholder="Domain (example.com)">
+                <span class="error"></span>
+            </div>
+
+            <div class="field">
+                <select id="qtype">
+                    <option value="A">A</option>
+                    <option value="NS">NS</option>
+                    <option value="MX">MX</option>
+                    <option value="CNAME">CNAME</option>
+                </select>
+            </div>
+
+            <div class="field hidden" id="priorityField">
+                <input type="number" id="priority" placeholder="Priority (MX only)">
+                <span class="error"></span>
+            </div>
+
+            <div class="field">
+                <input type="text" id="value" placeholder="Value (IP / Hostname)">
+                <span class="error"></span>
+            </div>
+
+            <div class="field">
+                <input type="number" id="ttl" placeholder="TTL" value="60">
+            </div>
+
+            <div class="form-actions">
+                <button type="button" id="cancelBtn" class="btn-secondary">انصراف</button>
+                <button type="submit" class="btn-primary">افزودن</button>
+            </div>
+            </form>
+        </div>
+    </div>
+
+
     <script src="js/api.js"></script>
+    <script src="js/toggle_handler.js"></script>
     <script src="js/theme.js"></script>
 </body>
 </html>

@@ -1,47 +1,40 @@
 async function loadRecords() {
-    try {
-        const res = await fetch("/admin/records");
-        const data = await res.json();
+    const res = await fetch("/admin/records");
+    const data = await res.json();
 
-        const tbody = document.getElementById("records-box");
-        tbody.innerHTML = "";
+    const tbody = document.getElementById("records-box");
+    tbody.innerHTML = "";
 
-        if (data.length === 0) {
-            const tr = document.createElement("tr");
-            const td = document.createElement("td");
-            td.colSpan = 4;
-            td.textContent = "رکوردی وجود ندارد";
-            td.style.textAlign = "center";
-            tr.appendChild(td);
-            tbody.appendChild(tr);
-            return;
-        }
-
-        data.forEach(r => {
-            const tr = document.createElement("tr");
-
-            const tdDomain = document.createElement("td");
-            tdDomain.textContent = r.domain;
-            tr.appendChild(tdDomain);
-
-            const tdQtype = document.createElement("td");
-            tdQtype.textContent = r.qtype;
-            tr.appendChild(tdQtype);
-
-            const tdValue = document.createElement("td");
-            tdValue.textContent = r.value;
-            tr.appendChild(tdValue);
-
-            const tdTtl = document.createElement("td");
-            tdTtl.textContent = r.ttl;
-            tr.appendChild(tdTtl);
-
-            tbody.appendChild(tr);
-        });
-    } catch (err) {
-        console.error(err);
+    if (data.length === 0) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 5;
+        td.textContent = "رکوردی وجود ندارد";
+        td.style.textAlign = "center";
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
     }
+
+    data.forEach(r => {
+        const tr = document.createElement("tr");
+
+        tr.innerHTML = `
+            <td>${r.domain}</td>
+            <td>${r.qtype}</td>
+            <td>${r.value}</td>
+            <td>${r.ttl}</td>
+            <td>
+                <button class="del_btn" onclick="deleteRecord('${r.domain}','${r.qtype}')">
+                    حذف
+                </button>
+            </td>
+        `;
+
+        tbody.appendChild(tr);
+    });
 }
+
 
 async function loadLogs() {
     try {
@@ -92,7 +85,37 @@ async function loadLogs() {
     }
 }
 
+async function deleteRecord(domain, qtype) {
+    if (!confirm("آیا از حذف این رکورد مطمئن هستید؟")) return;
+
+    await fetch(`/admin/record/${domain}?qtype=${qtype}`, {
+        method: "DELETE"
+    });
+
+    loadRecords();
+}
+
 window.addEventListener("DOMContentLoaded", () => {
     loadRecords();
     loadLogs();
+});
+
+document.getElementById("addRecordForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const record = {
+        domain: document.getElementById("domain").value,
+        qtype: document.getElementById("qtype").value,
+        value: document.getElementById("value").value,
+        ttl: Number(document.getElementById("ttl").value)
+    };
+
+    await fetch("/admin/record", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(record)
+    });
+
+    e.target.reset();
+    loadRecords();
 });
