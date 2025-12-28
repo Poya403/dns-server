@@ -64,12 +64,30 @@ def delete_record(domain: str, qtype: str = None):
     conn.commit()
     conn.close()
 
-def get_records(domain: str, qtype: str = None):
+def get_records(domain: str = None, qtype: str = None):
     conn, cursor = get_connection()
-    if qtype:
-        cursor.execute("SELECT domain, qtype, value, ttl, priority FROM records WHERE domain=? AND qtype=?", (domain, qtype))
+    
+    if domain and qtype:
+        cursor.execute(
+            "SELECT domain, qtype, value, ttl, priority FROM records WHERE domain=? AND qtype=?",
+            (domain, qtype)
+        )
+    elif domain:
+        cursor.execute(
+            "SELECT domain, qtype, value, ttl, priority FROM records WHERE domain=?",
+            (domain,)
+        )
+    elif qtype:
+        cursor.execute(
+            "SELECT domain, qtype, value, ttl, priority FROM records WHERE qtype=?",
+            (qtype,)
+        )
     else:
-        cursor.execute("SELECT domain, qtype, value, ttl, priority FROM records WHERE domain=?", (domain,))
+        cursor.execute(
+            "SELECT domain, qtype, value, ttl, priority FROM records"
+        )
+    
     rows = cursor.fetchall()
     conn.close()
-    return [{"name": r[0], "type": r[1], "value": r[2], "ttl": r[3], "priority": r[4]} for r in rows]
+    return [{"domain": r[0], "qtype": r[1], "value": r[2], "ttl": r[3], "priority": r[4]} for r in rows]
+

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DNS Panel</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div>
+        <h1>پنل مدیریت DNS</h1>
+        <button id="themeToggle" class="theme-btn">🌙</button>
+    </div>
+
+    <div class="container">
+        <p>لیست رکوردها</p>
+        <div class="actions">
+            <button class="add_btn">افزودن رکورد</button>
+            <button class="del_btn">حذف رکورد</button>
+        </div>
+        <div id="records-box" class="requests-box">
+            <p>هنوز رکوردی ثبت نشده است</p>
+        </div>
+    </div>
+
+    <div class="container">
+        <p>لیست درخواست‌ها</p>
+        <div id="logs-box" class="requests-box">
+            <p>هنوز درخواستی ثبت نشده است</p>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/theme.js"></script>
+</body>
+</html>
