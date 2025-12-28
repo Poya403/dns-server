@@ -24,4 +24,5 @@ Thumbs.db
 .env
 
 # database
+dbConnection.session.sql
 records.db
