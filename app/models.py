@@ -10,4 +10,4 @@ class DNSRecordModel(BaseModel):
     qtype: str
     value: str
     ttl: int = 60
-    priority: Optional[int] = None
+    prorarity: Optional[int] = None

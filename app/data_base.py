@@ -14,14 +14,13 @@ def init_db():
     conn, cursor = get_connection()
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS records (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
         domain TEXT NOT NULL,
         qtype TEXT NOT NULL,
         value TEXT NOT NULL,
-        ttl INTEGER DEFAULT 60,
-        priority INTEGER,
-        UNIQUE(domain, qtype, value)
-    )
+        ttl INTEGER,
+        prorarity INTEGER,
+        PRIMARY KEY (domain, qtype, value)
+    );
     """)
 
     cursor.execute("""
@@ -46,12 +45,12 @@ def init_db():
 def add_record(record: DNSRecordModel):
     conn, cursor = get_connection()
     cursor.execute("""
-        INSERT INTO records(domain, qtype, value, ttl, priority)
+        INSERT INTO records(domain, qtype, value, ttl, prorarity)
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(domain, qtype, value) DO UPDATE SET
             ttl = excluded.ttl,
-            priority = excluded.priority
-    """, (record.domain, record.qtype, record.value, record.ttl, record.priority))
+            prorarity = excluded.prorarity
+    """, (record.domain, record.qtype, record.value, record.ttl, record.prorarity))
     conn.commit()
     conn.close()
 
@@ -69,27 +68,27 @@ def get_records(domain: str = None, qtype: str = None):
     
     if domain and qtype:
         cursor.execute(
-            "SELECT domain, qtype, value, ttl, priority FROM records WHERE domain=? AND qtype=?",
+            "SELECT domain, qtype, value, ttl, prorarity FROM records WHERE domain=? AND qtype=?",
             (domain, qtype)
         )
     elif domain:
         cursor.execute(
-            "SELECT domain, qtype, value, ttl, priority FROM records WHERE domain=?",
+            "SELECT domain, qtype, value, ttl, prorarity FROM records WHERE domain=?",
             (domain,)
         )
     elif qtype:
         cursor.execute(
-            "SELECT domain, qtype, value, ttl, priority FROM records WHERE qtype=?",
+            "SELECT domain, qtype, value, ttl, prorarity FROM records WHERE qtype=?",
             (qtype,)
         )
     else:
         cursor.execute(
-            "SELECT domain, qtype, value, ttl, priority FROM records"
+            "SELECT domain, qtype, value, ttl, prorarity FROM records"
         )
     
     rows = cursor.fetchall()
     conn.close()
-    return [{"domain": r[0], "qtype": r[1], "value": r[2], "ttl": r[3], "priority": r[4]} for r in rows]
+    return [{"domain": r[0], "qtype": r[1], "value": r[2], "ttl": r[3], "prorarity": r[4]} for r in rows]
 
 def get_logs(domain: str = None, qtype: str = None):
     conn, cursor = get_connection()
